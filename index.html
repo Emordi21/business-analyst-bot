@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BA Copilot</title>
+  </head>
+  <body>
+    <div id="app">
+      <aside class="sidebar">
+        <h1 class="brand"><span class="blink">&gt;_</span> BA Copilot</h1>
+        <p class="tagline">Pick a task, give context, get a tailored answer.</p>
+        <nav id="modes" aria-label="Task type"></nav>
+      </aside>
+
+      <main class="chat">
+        <header class="chat-header">
+          <div>
+            <h2 id="mode-title"></h2>
+            <p id="mode-desc"></p>
+          </div>
+          <button id="clear" type="button" title="Clear this conversation">Clear</button>
+        </header>
+
+        <div id="messages" class="messages" aria-live="polite"></div>
+
+        <form id="form" class="composer">
+          <textarea id="input" rows="2" required></textarea>
+          <button id="send" type="submit">Send</button>
+        </form>
+      </main>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
