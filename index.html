@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BA Copilot</title>
+  </head>
+  <body>
+    <div id="app">
+      <aside class="sidebar" id="sidebar">
+        <h1 class="brand"><span class="blink">&gt;_</span> BA Copilot</h1>
+        <input id="search" type="search" placeholder="🔎 Search projects & documents" autocomplete="off" />
+        <div class="side-head">
+          <span>📁 Projects</span>
+          <button id="new-project" class="ghost small" type="button">+ New</button>
+        </div>
+        <nav id="tree" aria-label="Projects"></nav>
+        <p class="side-foot">Saved in this browser only.</p>
+      </aside>
+      <div class="scrim" id="scrim"></div>
+
+      <main class="main">
+        <header class="topbar">
+          <button id="menu" class="ghost icon-btn" type="button" aria-label="Open menu">☰</button>
+          <nav id="bubbles" class="bubbles" aria-label="Task type"></nav>
+        </header>
+        <div id="view" class="view"></div>
+      </main>
+    </div>
+
+    <dialog id="project-dialog">
+      <form id="project-form" class="stack">
+        <h3>📁 New project</h3>
+        <label>Project name<input name="name" required maxlength="80" placeholder="e.g. Customer Portal Revamp" /></label>
+        <label>Project context
+          <textarea name="context" rows="6" required placeholder="What is it about? Goals, stakeholders, systems, constraints, timeline, budget… The more detail, the better the documents."></textarea>
+        </label>
+        <div class="row end">
+          <button type="button" class="ghost" id="cancel-project">Cancel</button>
+          <button type="submit" class="primary">Create project</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
