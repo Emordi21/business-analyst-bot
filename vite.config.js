@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from 'vite';
+import { askGemini } from './server/gemini.js';
 
 // A tiny "plugin" that adds a /api/chat endpoint to Vite's server.
 // The browser calls /api/chat, and THIS code (running on the server) calls Gemini.
@@ -13,11 +14,6 @@ function geminiProxy(env) {
       res.end(JSON.stringify(body));
     };
 
-    if (!env.GEMINI_API_KEY) {
-      send(500, { error: 'GEMINI_API_KEY is missing. Copy .env.example to .env and add your key, then restart.' });
-      return true;
-    }
-
     // Read the JSON body the browser sent
     let raw = '';
     for await (const chunk of req) raw += chunk;
@@ -25,36 +21,11 @@ function geminiProxy(env) {
     try {
       payload = JSON.parse(raw);
     } catch {
-      send(400, { error: 'Invalid JSON' });
-      return true;
+      payload = null; // askGemini will answer "Invalid request"
     }
 
-    const model = env.GEMINI_MODEL || 'gemini-3.8-flash';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-
-    try {
-      const upstream = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: payload.system }] },
-          // Gemini calls the assistant role "model" (not "assistant")
-          contents: payload.messages.map((m) => ({
-            role: m.role === 'user' ? 'user' : 'model',
-            parts: [{ text: m.content }],
-          })),
-        }),
-      });
-      const data = await upstream.json();
-      if (!upstream.ok) {
-        send(upstream.status, { error: data?.error?.message || 'Gemini request failed' });
-        return true;
-      }
-      const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') ?? '';
-      send(200, { text: text || '(The model returned an empty response.)' });
-    } catch (err) {
-      send(502, { error: `Could not reach Gemini: ${err.message}` });
-    }
+    const { status, body } = await askGemini(env, payload);
+    send(status, body);
     return true;
   };
 
