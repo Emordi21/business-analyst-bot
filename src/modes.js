@@ -4,7 +4,7 @@
 //  - system: the "system prompt" - hidden instructions that tell the AI how to behave.
 //  - hint:   placeholder text that shows the user what context to provide.
 
-const BASE = `You are BA Copilot, an expert senior Business Analyst coach (CBAP-level knowledge of the BABOK guide).
+export const BASE = `You are BA Copilot, an expert senior Business Analyst coach (CBAP-level knowledge of the BABOK guide).
 You help business analysts with practical, ready-to-use work products.
 Rules:
 - Use ONLY the context the user gives you. Reuse their domain terms, system names and stakeholder roles.
@@ -119,3 +119,16 @@ Task: general business analysis advice.
 - Name the relevant BA technique or BABOK concept and explain when to use it.`,
   },
 ];
+
+// Example prompts shown as clickable chips on each mode's welcome card.
+const EXAMPLES = {
+  requirements: ['Write requirements for a customer self-service portal for a utilities company', 'Review these requirements for ambiguity: "The system should be fast and user friendly"'],
+  stories: ['Create user stories for a mobile app that lets patients book GP appointments', 'Split this epic into stories: "Online checkout"'],
+  criteria: ['Write acceptance criteria: As a customer, I want to reset my password so that I can regain access', 'Give me edge cases for a funds-transfer feature'],
+  process: ['Model the as-is process: customer emails a claim, a clerk keys it into the legacy system, a manager approves by email', 'Where can we automate invoice approval?'],
+  stakeholders: ['Analyse stakeholders for a company-wide CRM replacement', 'How should I engage a sceptical senior sponsor?'],
+  gap: ['Gap analysis: manual spreadsheet reporting today, automated dashboards desired', 'Impact assessment for moving payroll to a new vendor'],
+  docs: ['Draft a business case for migrating our on-premise servers to the cloud', 'Write meeting minutes template and a weekly status report'],
+  general: ['How do I run an effective requirements workshop?', 'MoSCoW vs RICE: when should I use each?'],
+};
+MODES.forEach((m) => (m.examples = EXAMPLES[m.id] ?? []));

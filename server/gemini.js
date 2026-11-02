@@ -23,6 +23,8 @@ export async function askGemini(env, payload) {
           role: m.role === 'user' ? 'user' : 'model',
           parts: [{ text: m.content }],
         })),
+        // json:true asks Gemini to reply with pure JSON (used by the Quiz feature)
+        ...(payload.json ? { generationConfig: { responseMimeType: 'application/json' } } : {}),
       }),
     });
     const data = await upstream.json();

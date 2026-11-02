@@ -1,127 +1,136 @@
 import './style.css';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
 import { MODES } from './modes.js';
+import { state, persist, createProject } from './store.js';
+import { docTypeOf } from './docTypes.js';
+import { esc, uid, debounce } from './utils.js';
+import { renderChat } from './views/chat.js';
+import { renderQuiz } from './views/quiz.js';
+import { renderProject } from './views/project.js';
+import { renderDoc } from './views/doc.js';
+import { renderSearch } from './views/search.js';
 
-// ---- 1. Grab the HTML elements we need to control --------------------------
 const $ = (id) => document.getElementById(id);
-const modesNav = $('modes');
-const messagesEl = $('messages');
-const form = $('form');
-const input = $('input');
-const sendBtn = $('send');
 
-// ---- 2. App state ----------------------------------------------------------
-// Each mode keeps its OWN conversation, so switching tasks doesn't mix contexts.
-const histories = Object.fromEntries(MODES.map((m) => [m.id, []]));
-let current = MODES[0];
-let busy = false;
+// The top "bubbles": every BA task plus the Quiz.
+const BUBBLES = [
+  ...MODES.map((m) => ({ view: { type: 'chat', id: m.id }, key: `chat:${m.id}`, icon: m.icon, label: m.label, hue: m.hue })),
+  { view: { type: 'quiz' }, key: 'quiz', icon: '🎓', label: 'Quiz', hue: 75 },
+];
 
-// ---- 3. Rendering ----------------------------------------------------------
-function renderMarkdown(text) {
-  // marked turns Markdown -> HTML; DOMPurify strips anything dangerous (XSS protection)
-  return DOMPurify.sanitize(marked.parse(text));
+const HUES = { project: 150, doc: 150, search: 135 };
+let view = { type: 'chat', id: 'requirements' };
+
+const viewKey = (v) => (v.type === 'chat' ? `chat:${v.id}` : v.type);
+
+// ---- Router: show a screen ----
+function go(next) {
+  view = next;
+  const bubble = BUBBLES.find((b) => b.key === viewKey(next));
+  // Changing --hue on <body> recolours the whole UI (see style.css)
+  document.body.style.setProperty('--hue', bubble?.hue ?? HUES[next.type] ?? 135);
+  renderBubbles();
+  renderTree();
+  const el = $('view');
+  el.dataset.token = uid(); // lets old async jobs know the screen has changed
+  el.innerHTML = '';
+  const screens = { chat: renderChat, quiz: renderQuiz, project: renderProject, doc: renderDoc, search: renderSearch };
+  screens[next.type](el, next, app);
+  closeDrawer();
 }
 
-function addMessage(role, content, { isError = false } = {}) {
-  const div = document.createElement('div');
-  div.className = `msg ${role}${isError ? ' error' : ''}`;
-  if (role === 'assistant' && !isError) div.innerHTML = renderMarkdown(content);
-  else div.textContent = content; // textContent is safe: it never runs HTML
-  messagesEl.appendChild(div);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-  return div;
+const app = { go, refreshSidebar: renderTree };
+
+// ---- Top bubbles ----
+function renderBubbles() {
+  const nav = $('bubbles');
+  nav.innerHTML = '';
+  BUBBLES.forEach((b) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'bubble' + (b.key === viewKey(view) ? ' active' : '');
+    btn.style.setProperty('--hue', b.hue); // each bubble keeps its own colour
+    btn.innerHTML = `<span class="orb">${b.icon}</span><span class="lbl">${esc(b.label)}</span>`;
+    btn.addEventListener('click', () => go(b.view));
+    nav.appendChild(btn);
+  });
+  nav.querySelector('.active')?.scrollIntoView({ inline: 'center', block: 'nearest' });
 }
 
-function renderChat() {
-  messagesEl.innerHTML = '';
-  const history = histories[current.id];
-  if (history.length === 0) {
-    const welcome = document.createElement('div');
-    welcome.className = 'msg assistant welcome';
-    welcome.innerHTML = `<h3>${current.icon} ${current.label}</h3><p>${current.desc}</p><p class="dim">${current.hint}</p>`;
-    messagesEl.appendChild(welcome);
+// ---- Sidebar: projects folder tree ----
+function renderTree() {
+  const tree = $('tree');
+  if (!state.projects.length) {
+    tree.innerHTML = '<p class="empty">No projects yet.<br/>Create one to generate PRDs, business cases and more.</p>';
+    return;
   }
-  history.forEach((m) => addMessage(m.role, m.content, { isError: m.isError }));
+  tree.innerHTML = state.projects
+    .map((p) => {
+      const open = state.expanded[p.id];
+      const isActiveProject = view.type === 'project' && view.id === p.id;
+      return `
+      <div class="folder">
+        <div class="folder-row ${isActiveProject ? 'active' : ''} ${state.activeProjectId === p.id ? 'current' : ''}">
+          <button class="chev" data-toggle="${p.id}" aria-label="Expand">${open ? '▾' : '▸'}</button>
+          <button class="folder-name" data-project="${p.id}" title="${esc(p.name)}">${open ? '📂' : '📁'} ${esc(p.name)}</button>
+        </div>
+        ${open ? `<ul class="files">${p.docs.length ? p.docs.map((d) => `
+          <li><button class="file ${view.type === 'doc' && view.docId === d.id ? 'active' : ''}" data-project="${p.id}" data-doc="${d.id}" title="${esc(d.title)}">${docTypeOf(d.type).icon} ${esc(d.title)}</button></li>`).join('') : '<li class="empty small">Empty folder</li>'}</ul>` : ''}
+      </div>`;
+    })
+    .join('');
 }
 
-function setMode(mode) {
-  current = mode;
-  // Changing --hue on <body> re-colours the whole UI (see style.css)
-  document.body.style.setProperty('--hue', mode.hue);
-  $('mode-title').textContent = `${mode.icon} ${mode.label}`;
-  $('mode-desc').textContent = mode.desc;
-  input.placeholder = mode.hint;
-  document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.id === mode.id));
-  renderChat();
-  input.focus();
-}
-
-// ---- 4. Talking to the AI --------------------------------------------------
-async function send(text) {
-  const mode = current; // remember which mode asked, in case the user switches while waiting
-  const history = histories[mode.id];
-  history.push({ role: 'user', content: text });
-  renderChat();
-
-  busy = true;
-  sendBtn.disabled = true;
-  const typing = addMessage('assistant', 'Thinking…');
-  typing.classList.add('typing');
-
-  try {
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      // Only send real messages (not error bubbles) to the model
-      body: JSON.stringify({
-        system: mode.system,
-        messages: history.filter((m) => !m.isError).map(({ role, content }) => ({ role, content })),
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-    history.push({ role: 'assistant', content: data.text });
-  } catch (err) {
-    history.push({ role: 'assistant', content: `⚠️ ${err.message}`, isError: true });
-  } finally {
-    busy = false;
-    sendBtn.disabled = false;
-    if (current.id === mode.id) renderChat();
+$('tree').addEventListener('click', (e) => {
+  const toggle = e.target.closest('[data-toggle]');
+  if (toggle) {
+    state.expanded[toggle.dataset.toggle] = !state.expanded[toggle.dataset.toggle];
+    persist();
+    return renderTree();
   }
-}
-
-// ---- 5. Wire up events -----------------------------------------------------
-MODES.forEach((mode) => {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'mode-btn';
-  btn.dataset.id = mode.id;
-  btn.style.setProperty('--hue', mode.hue); // each button previews its own colour
-  btn.innerHTML = `<span class="icon">${mode.icon}</span><span>${mode.label}</span>`;
-  btn.addEventListener('click', () => setMode(mode));
-  modesNav.appendChild(btn);
+  const item = e.target.closest('[data-project]');
+  if (!item) return;
+  if (item.dataset.doc) return go({ type: 'doc', projectId: item.dataset.project, docId: item.dataset.doc });
+  state.expanded[item.dataset.project] = true;
+  persist();
+  go({ type: 'project', id: item.dataset.project });
 });
 
-form.addEventListener('submit', (e) => {
-  e.preventDefault(); // stop the browser from reloading the page
-  const text = input.value.trim();
-  if (!text || busy) return;
-  input.value = '';
-  send(text);
-});
-
-// Enter sends, Shift+Enter makes a new line
-input.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    form.requestSubmit();
+// ---- Search ----
+const search = $('search');
+search.addEventListener(
+  'input',
+  debounce(() => {
+    const q = search.value.trim();
+    if (q) go({ type: 'search', q });
+    else if (view.type === 'search') go({ type: 'chat', id: 'requirements' });
+  }, 250),
+);
+search.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    search.value = '';
+    search.dispatchEvent(new Event('input'));
   }
 });
 
-$('clear').addEventListener('click', () => {
-  histories[current.id] = [];
-  renderChat();
+// ---- New project dialog ----
+const dialog = $('project-dialog');
+$('new-project').addEventListener('click', () => {
+  $('project-form').reset();
+  dialog.showModal();
+});
+$('cancel-project').addEventListener('click', () => dialog.close());
+$('project-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const project = createProject({ name: f.get('name'), context: f.get('context') });
+  dialog.close();
+  go({ type: 'project', id: project.id });
 });
 
-setMode(MODES[0]);
+// ---- Mobile drawer ----
+const closeDrawer = () => document.body.classList.remove('drawer-open');
+$('menu').addEventListener('click', () => document.body.classList.toggle('drawer-open'));
+$('scrim').addEventListener('click', closeDrawer);
+
+// Start on the first task
+go({ type: 'chat', id: 'requirements' });
